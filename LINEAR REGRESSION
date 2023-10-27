@@ -1,0 +1,183 @@
+import numpy as np
+import pandas as pd
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+
+import tensorflow as tf
+data = pd.read_csv('../input/us-accidents/US_Accidents_June20.csv', nrows=400000)
+data
+data.info()
+<class 'pandas.core.frame.DataFrame'>
+RangeIndex: 400000 entries, 0 to 399999
+Data columns (total 49 columns):
+ #   Column                 Non-Null Count   Dtype  
+---  ------                 --------------   -----  
+ 0   ID                     400000 non-null  object 
+ 1   Source                 400000 non-null  object 
+ 2   TMC                    400000 non-null  float64
+ 3   Severity               400000 non-null  int64  
+ 4   Start_Time             400000 non-null  object 
+ 5   End_Time               400000 non-null  object 
+ 6   Start_Lat              400000 non-null  float64
+ 7   Start_Lng              400000 non-null  float64
+ 8   End_Lat                0 non-null       float64
+ 9   End_Lng                0 non-null       float64
+ 10  Distance(mi)           400000 non-null  float64
+ 11  Description            400000 non-null  object 
+ 12  Number                 142925 non-null  float64
+ 13  Street                 400000 non-null  object 
+ 14  Side                   400000 non-null  object 
+ 15  City                   399981 non-null  object 
+ 16  County                 400000 non-null  object 
+ 17  State                  400000 non-null  object 
+ 18  Zipcode                399954 non-null  object 
+ 19  Country                400000 non-null  object 
+ 20  Timezone               399954 non-null  object 
+ 21  Airport_Code           399954 non-null  object 
+ 22  Weather_Timestamp      396789 non-null  object 
+ 23  Temperature(F)         394083 non-null  float64
+ 24  Wind_Chill(F)          59095 non-null   float64
+ 25  Humidity(%)            393489 non-null  float64
+ 26  Pressure(in)           395351 non-null  float64
+ 27  Visibility(mi)         391219 non-null  float64
+ 28  Wind_Direction         396768 non-null  object 
+ 29  Wind_Speed(mph)        325825 non-null  float64
+ 30  Precipitation(in)      42047 non-null   float64
+ 31  Weather_Condition      391790 non-null  object 
+ 32  Amenity                400000 non-null  bool   
+ 33  Bump                   400000 non-null  bool   
+ 34  Crossing               400000 non-null  bool   
+ 35  Give_Way               400000 non-null  bool   
+ 36  Junction               400000 non-null  bool   
+ 37  No_Exit                400000 non-null  bool   
+ 38  Railway                400000 non-null  bool   
+ 39  Roundabout             400000 non-null  bool   
+ 40  Station                400000 non-null  bool   
+ 41  Stop                   400000 non-null  bool   
+ 42  Traffic_Calming        400000 non-null  bool   
+ 43  Traffic_Signal         400000 non-null  bool   
+ 44  Turning_Loop           400000 non-null  bool   
+ 45  Sunrise_Sunset         399981 non-null  object 
+ 46  Civil_Twilight         399981 non-null  object 
+ 47  Nautical_Twilight      399981 non-null  object 
+ 48  Astronomical_Twilight  399981 non-null  object 
+dtypes: bool(13), float64(14), int64(1), object(21)
+memory usage: 114.8+ MB
+data.isna().mean()
+null_columns = ['End_Lat', 'End_Lng', 'Number', 'Wind_Chill(F)', 'Precipitation(in)']
+
+data = data.drop(null_columns, axis=1)
+data.isna().sum()
+data = data.dropna(axis=0).reset_index(drop=True)
+print("Total missing values:", data.isna().sum().sum())
+data
+{column: len(data[column].unique()) for column in data.columns if data.dtypes[column] == 'object'}
+unneeded_columns = ['ID', 'Description', 'Street', 'City', 'Zipcode', 'Country']
+
+data = data.drop(unneeded_columns, axis=1)
+data
+def get_years(df, column):
+    return df[column].apply(lambda date: date[0:4])
+
+def get_months(df, column):
+    return df[column].apply(lambda date: date[5:7])
+data['Start_Time_Month'] = get_months(data, 'Start_Time')
+data['Start_Time_Year'] = get_years(data, 'Start_Time')
+
+data['End_Time_Month'] = get_months(data, 'End_Time')
+data['End_Time_Year'] = get_years(data, 'End_Time')
+
+data['Weather_Timestamp_Month'] = get_months(data, 'Weather_Timestamp')
+data['Weather_Timestamp_Year'] = get_years(data, 'Weather_Timestamp')
+
+
+data = data.drop(['Start_Time', 'End_Time', 'Weather_Timestamp'], axis=1)
+data
+
+#ENCODING
+def onehot_encode(df, columns, prefixes):
+    df = df.copy()
+    for column, prefix in zip(columns, prefixes):
+        dummies = pd.get_dummies(df[column], prefix=prefix)
+        df = pd.concat([df, dummies], axis=1)
+        df = df.drop(column, axis=1)
+    return df
+{column: len(data[column].unique()) for column in data.columns if data.dtypes[column] == 'object'}
+data = onehot_encode(
+    data,
+    columns=['Side', 'County', 'State', 'Timezone', 'Airport_Code', 'Wind_Direction', 'Weather_Condition'],
+    prefixes=['SI', 'CO', 'ST', 'TZ', 'AC', 'WD', 'WC']
+)
+data
+def get_binary_column(df, column):
+    if column == 'Source':
+        return df[column].apply(lambda x: 1 if x == 'MapQuest' else 0)
+    else:
+        return df[column].apply(lambda x: 1 if x == 'Day' else 0)
+data['Source'] = get_binary_column(data, 'Source')
+
+data['Sunrise_Sunset'] = get_binary_column(data, 'Sunrise_Sunset')
+data['Civil_Twilight'] = get_binary_column(data, 'Civil_Twilight')
+data['Nautical_Twilight'] = get_binary_column(data, 'Nautical_Twilight')
+data['Astronomical_Twilight'] = get_binary_column(data, 'Astronomical_Twilight')
+data
+
+#SCALING
+y = data['Severity'].copy()
+X = data.drop('Severity', axis=1).copy()
+y.unique()
+y = y - 1
+X = X.astype(np.float)
+scaler = StandardScaler()
+
+X = scaler.fit_transform(X)
+X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.7, random_state=100)
+
+#TRAINING
+X.shape
+inputs = tf.keras.Input(shape=(X.shape[1],))
+x = tf.keras.layers.Dense(64, activation='relu')(inputs)
+x = tf.keras.layers.Dense(64, activation='relu')(x)
+outputs = tf.keras.layers.Dense(4, activation='softmax')(x)
+
+model = tf.keras.Model(inputs, outputs)
+
+model.compile(
+    optimizer='adam',
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+batch_size = 32
+epochs = 20
+
+history = model.fit(
+    X_train,
+    y_train,
+    validation_split=0.2,
+    batch_size=batch_size,
+    epochs=epochs,
+    callbacks=[
+        tf.keras.callbacks.ReduceLROnPlateau(),
+        tf.keras.callbacks.EarlyStopping(
+            monitor='val_loss',
+            patience=3,
+            restore_best_weights=True
+        )
+    ]
+)
+Epoch 1/20
+5618/5618 [==============================] - 12s 2ms/step - loss: 0.4421 - accuracy: 0.7921 - val_loss: 0.4166 - val_accuracy: 0.8046
+Epoch 2/20
+5618/5618 [==============================] - 11s 2ms/step - loss: 0.4104 - accuracy: 0.8074 - val_loss: 0.4118 - val_accuracy: 0.8080
+Epoch 3/20
+5618/5618 [==============================] - 11s 2ms/step - loss: 0.4000 - accuracy: 0.8113 - val_loss: 0.4062 - val_accuracy: 0.8111
+Epoch 4/20
+5618/5618 [==============================] - 11s 2ms/step - loss: 0.3945 - accuracy: 0.8149 - val_loss: 0.4044 - val_accuracy: 0.8112
+Epoch 5/20
+5618/5618 [==============================] - 11s 2ms/step - loss: 0.3898 - accuracy: 0.8163 - val_loss: 0.4047 - val_accuracy: 0.8135
+Epoch 6/20
+5618/5618 [==============================] - 12s 2ms/step - loss: 0.3862 - accuracy: 0.8183 - val_loss: 0.4054 - val_accuracy: 0.8116
+Epoch 7/20
+5618/5618 [==============================] - 12s 2ms/step - loss: 0.3837 - accuracy: 0.8190 - val_loss: 0.4045 - val_accuracy: 0.8140
